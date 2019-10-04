@@ -158,7 +158,9 @@ class Resources(object):
 
         self.privapp_apks = self._resolve_apks(apks)
         self.permissions_dir = self._resolve_sys_path('system/etc/permissions')
+        self.permissions_prod_dir = self._resolve_sys_path('product/etc/permissions')
         self.sysconfig_dir = self._resolve_sys_path('system/etc/sysconfig')
+        self.sysconfig_prod_dir = self._resolve_sys_path('product/etc/sysconfig')
         self.framework_res_apk = self._resolve_sys_path('system/framework/'
                                                         'framework-res.apk')
 
@@ -311,17 +313,52 @@ class Resources(object):
     def _resolve_all_privapps(self):
         """Extract package name and requested permissions."""
         if self._is_android_env:
+            apps_dir = os.path.join(os.environ['ANDROID_PRODUCT_OUT'], 'obj', 'APPS')
+            for app_dir_name in os.listdir(apps_dir):
+                app_name = re.sub('_intermediates$', '', app_dir_name)
+                all_apps_dir = os.path.join(apps_dir, app_dir_name)
+
+            system_dir = os.path.join(os.environ['ANDROID_PRODUCT_OUT'],
+                                        'system')
+            app_dir = os.path.join(os.environ['ANDROID_PRODUCT_OUT'],
+                                        'system/app')
             priv_app_dir = os.path.join(os.environ['ANDROID_PRODUCT_OUT'],
                                         'system/priv-app')
+            product_out = os.path.join(os.environ['ANDROID_PRODUCT_OUT'],
+                                        '')
+
+            if 'product' in get_output('ls %s' %(system_dir)).split():
+                prod_priv_app_dir = os.path.join(os.environ['ANDROID_PRODUCT_OUT'], 'system/product/priv-app')
+                prod_app_dir = os.path.join(os.environ['ANDROID_PRODUCT_OUT'],
+                                            'system/product/app')
+
+            if 'product' in get_output('ls %s' %(product_out)).split():
+                prod_priv_app_dir = os.path.join(os.environ['ANDROID_PRODUCT_OUT'], 'product/priv-app')
+                prod_app_dir = os.path.join(os.environ['ANDROID_PRODUCT_OUT'],
+                                        'product/app')
+            else:
+                prod_priv_app_dir = os.path.join(os.environ['ANDROID_PRODUCT_OUT'], 'system/priv-app')
+                prod_app_dir = os.path.join(os.environ['ANDROID_PRODUCT_OUT'],
+                                        'system/app')
         else:
             try:
                 priv_app_dir = self.adb.pull('/system/priv-app/')
+                prod_app_dir = self.adb.pull('/system/app/')
+                prod_priv_app_dir = self.adb.pull('/system/priv-app/')
+
+                if 'product' in get_output('ls %s' %(system_dir)).split():
+                     prod_app_dir = self.adb.pull('/system/product/app/')
+                     prod_priv_app_dir = self.adb.pull('/system/product/priv-app/')
+
+                if 'product' in get_output('ls %s' %(product_out)).split():
+                     prod_app_dir = self.adb.pull('/product/app/')
+                     prod_priv_app_dir = self.adb.pull('/product/priv-app/')
             except subprocess.CalledProcessError:
                 raise MissingResourceError(
                     'Directory "/system/priv-app" could not be pulled from on '
                     'device "%s".' % self.adb.serial)
 
-        return get_output('find %s -name "*.apk"' % priv_app_dir).split()
+        return get_output('find %s -name "*.apk" && find %s -name "*.apk" && find %s  -name "*.apk" &&  find %s  -name "*.apk" &&  find %s  -name "*.apk" ' %(priv_app_dir, prod_priv_app_dir, app_dir, prod_app_dir, apps_dir)).split()
 
     def _resolve_sys_path(self, file_path):
         """Resolves a path that is a part of an Android System Image."""
@@ -329,7 +366,6 @@ class Resources(object):
             return os.path.join(os.environ['ANDROID_PRODUCT_OUT'], file_path)
         else:
             return self.adb.pull(file_path)
-
 
 def get_output(command):
     """Returns the output of the command as a string.
