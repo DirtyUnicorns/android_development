@@ -158,11 +158,37 @@ class Resources(object):
 
         self.privapp_apks = self._resolve_apks(apks)
         self.permissions_dir = self._resolve_sys_path('system/etc/permissions')
-        self.permissions_prod_dir = self._resolve_sys_path('product/etc/permissions')
         self.sysconfig_dir = self._resolve_sys_path('system/etc/sysconfig')
-        self.sysconfig_prod_dir = self._resolve_sys_path('product/etc/sysconfig')
         self.framework_res_apk = self._resolve_sys_path('system/framework/'
                                                         'framework-res.apk')
+
+        system_dir = os.path.join(os.environ['ANDROID_PRODUCT_OUT'],
+                                        'system')
+        app_dir = os.path.join(os.environ['ANDROID_PRODUCT_OUT'],
+                                        'system/app')
+        priv_app_dir = os.path.join(os.environ['ANDROID_PRODUCT_OUT'],
+                                        'system/priv-app')
+        product_out = os.path.join(os.environ['ANDROID_PRODUCT_OUT'],
+                                        '')
+
+        if 'product' in get_output('ls %s' %(system_dir)).split():
+            prod_priv_app_dir = os.path.join(os.environ['ANDROID_PRODUCT_OUT'], 'system/product/priv-app')
+            prod_app_dir = os.path.join(os.environ['ANDROID_PRODUCT_OUT'],
+                                        'system/product/app')
+            self.permissions_prod_dir = self._resolve_sys_path('system/product/etc/permissions')
+            self.sysconfig_prod_dir = self._resolve_sys_path(' system/product/etc/sysconfig')
+
+
+        if 'product' in get_output('ls %s' %(product_out)).split():
+            prod_priv_app_dir = os.path.join(os.environ['ANDROID_PRODUCT_OUT'], 'product/priv-app')
+            prod_app_dir = os.path.join(os.environ['ANDROID_PRODUCT_OUT'],
+                                    'product/app')
+            self.permissions_prod_dir =self._resolve_sys_path('product/etc/permissions')
+            self.sysconfig_prod_dir = self._resolve_sys_path('product/etc/sysconfig')
+        else:
+            self.permissions_prod_dir = self._resolve_sys_path('product/etc/permissions')
+            self.sysconfig_prod_dir = self._resolve_sys_path('product/etc/sysconfig')
+
 
     @staticmethod
     def _resolve_adb(adb_path):
@@ -435,16 +461,42 @@ def create_permission_file(resources):
     # Parse base XML files in /etc dir, permissions listed there don't have
     # to be re-added
     base_permissions = {}
-    base_xml_files = itertools.chain(list_xml_files(resources.permissions_dir),
-                                     list_xml_files(resources.sysconfig_dir))
+    xml_files = []
+
+    base_xml_files = itertools.chain(list_xml_files(resources.permissions_dir),list_xml_files(resources.sysconfig_dir))
+    extra_xml_files = itertools.chain(list_xml_files(resources.permissions_prod_dir),list_xml_files(resources.sysconfig_prod_dir))
+
+    apps_redefine_base = []
+    results = {}
+
     for xml_file in base_xml_files:
+       parse_config_xml(xml_file, base_permissions)
+    priv_permissions = extract_priv_permissions(resources.aapt,
+                                                resources.framework_res_apk)
+
+    for priv_app in resources.privapp_apks:
+        pkg_info = extract_pkg_and_requested_permissions(resources.aapt,
+                                                         priv_app)
+        pkg_name = pkg_info['package_name']
+        priv_perms = get_priv_permissions(pkg_info['permissions'],
+                                          priv_permissions)
+        # Compute diff against permissions defined in base file
+        if base_permissions and (pkg_name in base_permissions):
+            base_permissions_pkg = base_permissions[pkg_name]
+            priv_perms = remove_base_permissions(priv_perms,
+                                                 base_permissions_pkg)
+            if priv_perms:
+                apps_redefine_base.append(pkg_name)
+        if priv_perms:
+            results[pkg_name] = sorted(priv_perms)
+
+    for xml_file in extra_xml_files:
+        xml_files.append(xml_file)
         parse_config_xml(xml_file, base_permissions)
 
     priv_permissions = extract_priv_permissions(resources.aapt,
                                                 resources.framework_res_apk)
 
-    apps_redefine_base = []
-    results = {}
     for priv_app in resources.privapp_apks:
         pkg_info = extract_pkg_and_requested_permissions(resources.aapt,
                                                          priv_app)
